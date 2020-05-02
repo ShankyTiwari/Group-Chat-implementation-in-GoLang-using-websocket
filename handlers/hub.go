@@ -1,7 +1,5 @@
 package handlers
 
-import "fmt"
-
 // Hub maintains the set of active clients and broadcasts messages to the clients.
 type Hub struct {
 	// Registered clients.
@@ -33,7 +31,6 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
-			fmt.Println(h.clients)
 
 		case client := <-h.unregister:
 			_, ok := h.clients[client]
@@ -47,7 +44,6 @@ func (h *Hub) Run() {
 				select {
 				case client.send <- message:
 				default:
-					fmt.Println("Incoming", string(message))
 					close(client.send)
 					delete(h.clients, client)
 				}

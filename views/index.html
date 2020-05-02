@@ -3,101 +3,138 @@
 
 <head>
     <title>Chat Example</title>
-    <script type="text/javascript">
-        window.onload = function () {
-            var conn;
-            var msg = document.getElementById("msg");
-            var log = document.getElementById("log");
-
-            function appendLog(item) {
-                var doScroll = log.scrollTop > log.scrollHeight - log.clientHeight - 1;
-                log.appendChild(item);
-                if (doScroll) {
-                    log.scrollTop = log.scrollHeight - log.clientHeight;
-                }
-            }
-
-            document.getElementById("form").onsubmit = function () {
-                if (!conn) {
-                    return false;
-                }
-                if (!msg.value) {
-                    return false;
-                }
-                conn.send(JSON.stringify({
-                    message: msg.value,
-                    name: "Shashank"
-                }));
-                msg.value = "";
-                return false;
-            };
-
-            if (window["WebSocket"]) {
-                conn = new WebSocket("ws://" + document.location.host + "/ws/" + Math.random());
-                conn.onclose = function (evt) {
-                    var item = document.createElement("div");
-                    item.innerHTML = "<b>Connection closed.</b>";
-                    appendLog(item);
-                };
-                conn.onmessage = function (evt) {
-                    var messages = evt.data.split('\n');
-                    for (var i = 0; i < messages.length; i++) {
-                        var item = document.createElement("div");
-                        item.innerText = messages[i];
-                        appendLog(item);
-                    }
-                };
-            } else {
-                var item = document.createElement("div");
-                item.innerHTML = "<b>Your browser does not support WebSockets.</b>";
-                appendLog(item);
-            }
-        };
-    </script>
     <style type="text/css">
-        html {
-            overflow: hidden;
+        * {
+            padding: 0;
+            margin: 0;
+            font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
         }
 
         body {
-            overflow: hidden;
-            padding: 0;
-            margin: 0;
             width: 100%;
-            height: 100%;
-            background: gray;
+            height: 100vh;
         }
 
-        #log {
-            background: white;
-            margin: 0;
-            padding: 0.5em 0.5em 0.5em 0.5em;
-            position: absolute;
-            top: 0.5em;
-            left: 0.5em;
-            right: 0.5em;
-            bottom: 3em;
-            overflow: auto;
+        .chat__app-container {
+            width: 70%;
+            height: 90%;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
         }
 
-        #form {
-            padding: 0 0.5em 0 0.5em;
-            margin: 0;
-            position: absolute;
-            bottom: 1em;
-            left: 0px;
-            width: 100%;
-            overflow: hidden;
+        .message-container {
+            flex: 1;
+            overflow-y: scroll;
+            padding: 10px;
+            background: rgba(188, 184, 184, 0.08);
+        }
+        
+
+        .message-payload {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 15px;;
+        }
+
+        .username {
+            font-size: 16px;
+        }
+
+        .message {
+            font-size: 16px;
+        }
+
+        input {
+            font-size: 20px;
+            padding: 5px;
         }
     </style>
 </head>
 
 <body>
-    <div id="log"></div>
-    <form id="form">
-        <input type="submit" value="Send" />
-        <input type="text" id="msg" size="64" autofocus />
-    </form>
+    <div class="chat__app-container">
+        <div class="message-container"></div>
+        <input type="text" id="message-text" size="64" autofocus />
+    </div>
+    <script type="text/javascript">
+        window.onload = function () {
+            let socketConnection;
+            const messageText = document.querySelector("#message-text");
+            const log = document.querySelector(".message-container");
+
+            const username = prompt("What's Your name")
+
+            if (window["WebSocket"]) {
+                socketConnection = new WebSocket("ws://" + document.location.host + "/ws/" + Math.random());
+
+                socketConnection.onclose = function (evt) {
+                    const messageTextAsHTML = `
+                        <div class="message-payload">
+                            <span class="message">Your Connection is closed.</span>
+                        </div>
+                    `;
+                    appendLog(messageTextAsHTML);
+                };
+
+                socketConnection.onmessage = function (event) {
+
+                    try {
+                        const messageContent = JSON.parse(event.data);
+                        const sentBy = messageContent.username ? messageContent.username : 'An unnamed fellow'
+                        const actualMessage = messageContent.message;
+
+                        const messageTextAsHTML = `
+                            <div class="message-payload">
+                                <span class="username">${sentBy} says:</span>
+                                <span class="message">${actualMessage}</span>
+                            </div>
+                        `;
+                        appendLog(messageTextAsHTML);
+                    } catch (error) {
+                        console.log(error)
+                        console.warn('Something went wrong while decoding the Message Payload')
+                    }
+                };
+            } else {
+                const messageTextAsHTML = `
+                    <div class="message-payload">
+                        <span class="message">
+                            <b>Your browser does not support WebSockets.</b>
+                        </span>
+                    </div>
+                `;
+                appendLog(messageTextAsHTML);
+            }
+
+            function appendLog(messageTextAsHTML) {
+                var doScroll = log.scrollTop > log.scrollHeight - log.clientHeight - 1;
+                log.insertAdjacentHTML('beforeend', messageTextAsHTML);
+                if (doScroll) {
+                    log.scrollTop = log.scrollHeight - log.clientHeight;
+                }
+            }
+
+            messageText.onkeypress = function (event) {
+                if(event.keyCode !== 13) {
+                    return;
+                }
+
+                if (!socketConnection) {
+                    return false;
+                }
+                if (!messageText.value) {
+                    return false;
+                }
+                socketConnection.send(JSON.stringify({
+                    message: messageText.value,
+                    username
+                }));
+                messageText.value = "";
+                return false;
+            };
+        };
+    </script>
 </body>
 
 </html>
