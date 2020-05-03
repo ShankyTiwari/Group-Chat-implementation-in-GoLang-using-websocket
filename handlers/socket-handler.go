@@ -2,11 +2,17 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+type socketEventStruct struct {
+	EventName    string      `json:"eventName"`
+	EventPayload interface{} `json:"eventPayload"`
+}
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
@@ -35,22 +41,12 @@ const (
 	maxMessageSize = 512
 )
 
-var (
-	newline = []byte{'\n'}
-	space   = []byte{' '}
-)
+func unRegisterAndCloseConnection(c *Client) {
+	c.hub.unregister <- c
+	c.webSocketConnection.Close()
+}
 
-// readPump pumps messages from the websocket connection to the hub.
-//
-// The application runs readPump in a per-connection goroutine. The application
-// ensures that there is at most one reader on a connection by executing all
-// reads from this goroutine.
-func (c *Client) readPump() {
-	defer func() {
-		c.hub.unregister <- c
-		c.webSocketConnection.Close()
-	}()
-
+func setSocketPayloadReadConfig(c *Client) {
 	// SetReadLimit sets the maximum size in bytes for a message read from the peer. If a
 	// message exceeds the limit, the connection sends a close message to the peer
 	// and returns ErrReadLimit to the application.
@@ -64,19 +60,60 @@ func (c *Client) readPump() {
 	// SetPongHandler sets the handler for pong messages received from the peer.
 	// The appData argument to h is the PONG message application data. The default pong handler does nothing.
 	c.webSocketConnection.SetPongHandler(func(string) error { c.webSocketConnection.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+}
+
+func handleSocketPayloadEvents(c *Client, socketEventPayload socketEventStruct) socketEventStruct {
+	var socketEventResponse socketEventStruct
+	switch socketEventPayload.EventName {
+	case "message":
+		socketEventResponse.EventName = "message response"
+		socketEventResponse.EventPayload = map[string]interface{}{
+			"username": c.username,
+			"message":  socketEventPayload.EventPayload,
+		}
+	}
+	return socketEventResponse
+}
+
+// readPump pumps messages from the websocket connection to the hub.
+//
+// The application runs readPump in a per-connection goroutine. The application
+// ensures that there is at most one reader on a connection by executing all
+// reads from this goroutine.
+func (c *Client) readPump() {
+	var socketEventPayload socketEventStruct
+
+	// Unregistering the client and closing the connection
+	defer unRegisterAndCloseConnection(c)
+
+	// Setting up the Payload configuration
+	setSocketPayloadReadConfig(c)
 
 	for {
-
 		// ReadMessage is a helper method for getting a reader using NextReader and reading from that reader to a buffer.
-		_, message, err := c.webSocketConnection.ReadMessage()
+		_, payload, err := c.webSocketConnection.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v", err)
 			}
 			break
 		}
-		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
-		c.hub.broadcast <- message
+
+		decoder := json.NewDecoder(bytes.NewReader(payload))
+		decoderErr := decoder.Decode(&socketEventPayload)
+
+		if decoderErr != nil {
+			log.Printf("error: %v", decoderErr)
+			break
+		}
+
+		//  Getting the proper Payload to send the client
+		socketEventPayload = handleSocketPayloadEvents(c, socketEventPayload)
+
+		reqBodyBytes := new(bytes.Buffer)
+		json.NewEncoder(reqBodyBytes).Encode(socketEventPayload)
+
+		c.hub.broadcast <- reqBodyBytes.Bytes()
 	}
 }
 
@@ -117,7 +154,6 @@ func (c *Client) writePump() {
 			// Add queued chat messages to the current websocket message.
 			n := len(c.send)
 			for i := 0; i < n; i++ {
-				w.Write(newline)
 				w.Write(<-c.send)
 			}
 

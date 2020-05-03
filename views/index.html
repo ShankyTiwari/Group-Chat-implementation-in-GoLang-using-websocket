@@ -45,6 +45,12 @@
             font-size: 16px;
         }
 
+        .announcement {
+            display: block;
+            font-size: 22px;
+            text-align: center;
+        }
+        
         input {
             font-size: 20px;
             padding: 5px;
@@ -63,10 +69,15 @@
             const messageText = document.querySelector("#message-text");
             const log = document.querySelector(".message-container");
 
-            const username = prompt("What's Your name")
+            const username = prompt("What's Your name");
+
+            if(username === null) {
+                alert('You must provide the username')
+                return;
+            }
 
             if (window["WebSocket"]) {
-                socketConnection = new WebSocket("ws://" + document.location.host + "/ws/" + Math.random());
+                socketConnection = new WebSocket("ws://" + document.location.host + "/ws/" + username);
 
                 socketConnection.onclose = function (evt) {
                     const messageTextAsHTML = `
@@ -78,19 +89,51 @@
                 };
 
                 socketConnection.onmessage = function (event) {
-
                     try {
-                        const messageContent = JSON.parse(event.data);
-                        const sentBy = messageContent.username ? messageContent.username : 'An unnamed fellow'
-                        const actualMessage = messageContent.message;
+                        const socketPayload = JSON.parse(event.data);
+                        console.log(socketPayload)
 
-                        const messageTextAsHTML = `
-                            <div class="message-payload">
-                                <span class="username">${sentBy} says:</span>
-                                <span class="message">${actualMessage}</span>
-                            </div>
-                        `;
-                        appendLog(messageTextAsHTML);
+                        switch (socketPayload.eventName) {
+                            case 'join':
+                                    appendLog(`
+                                        <div class="message-payload">
+                                            <span class="message announcement">${socketPayload.eventPayload} joined the
+                                                chat</span>
+                                        </div>
+                                    `);
+                                break;
+                            
+                            case 'disconnect':
+                                    appendLog(`
+                                        <div class="message-payload">
+                                            <span class="message announcement">${socketPayload.eventPayload} left the
+                                                chat</span>
+                                        </div>
+                                    `);
+                                break;
+                            
+                            case 'message response':
+                                    
+                                    if(!socketPayload.eventPayload) {
+                                        return
+                                    }
+
+                                    const messageContent = socketPayload.eventPayload
+                                    const sentBy = messageContent.username ? messageContent.username : 'An unnamed fellow'
+                                    const actualMessage = messageContent.message;
+
+                                    const messageTextAsHTML = `
+                                        <div class="message-payload">
+                                            <span class="username">${sentBy} says:</span>
+                                            <span class="message">${actualMessage}</span>
+                                        </div>
+                                    `;
+                                    appendLog(messageTextAsHTML);
+                                break;
+                        
+                            default:
+                                break;
+                        }
                     } catch (error) {
                         console.log(error)
                         console.warn('Something went wrong while decoding the Message Payload')
@@ -127,9 +170,10 @@
                     return false;
                 }
                 socketConnection.send(JSON.stringify({
-                    message: messageText.value,
-                    username
+                    EventName: 'message',
+                    EventPayload: messageText.value,
                 }));
+
                 messageText.value = "";
                 return false;
             };
