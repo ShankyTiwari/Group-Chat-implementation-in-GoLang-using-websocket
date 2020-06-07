@@ -7,13 +7,20 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
-	handlers "./handlers"
+	handlers "group-chat/handlers"
 )
+
+func setStaticFolder(route *mux.Router) {
+	fs := http.FileServer(http.Dir("./public/"))
+	route.PathPrefix("/public/").Handler(http.StripPrefix("/public/", fs))
+}
 
 // AddApproutes will add the routes for the application
 func AddApproutes(route *mux.Router) {
 
 	log.Println("Loadeding Routes...")
+
+	setStaticFolder(route)
 
 	hub := handlers.NewHub()
 	go hub.Run()
@@ -26,10 +33,8 @@ func AddApproutes(route *mux.Router) {
 			WriteBufferSize: 1024,
 		}
 
-		// Reading username from request parameter
 		username := mux.Vars(request)["username"]
 
-		// Upgrading the HTTP connection socket connection
 		connection, err := upgrader.Upgrade(responseWriter, request, nil)
 		if err != nil {
 			log.Println(err)
