@@ -16,15 +16,54 @@ const (
 	maxMessageSize = 512
 )
 
-func unRegisterAndCloseConnection(c *Client) {
-	c.hub.unregister <- c
-	c.webSocketConnection.Close()
+// CreateNewSocketUser creates a new socket user
+func CreateNewSocketUser(hub *Hub, connection *websocket.Conn, username string) {
+	client := &Client{
+		hub:                 hub,
+		webSocketConnection: connection,
+		send:                make(chan SocketEventStruct),
+		username:            username,
+	}
+
+	client.hub.register <- client
+
+	go client.writePump()
+	go client.readPump()
 }
 
-func setSocketPayloadReadConfig(c *Client) {
-	c.webSocketConnection.SetReadLimit(maxMessageSize)
-	c.webSocketConnection.SetReadDeadline(time.Now().Add(pongWait))
-	c.webSocketConnection.SetPongHandler(func(string) error { c.webSocketConnection.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+// HandleUserRegisterEvent will handle the Join event for New socket users
+func HandleUserRegisterEvent(hub *Hub, client *Client) {
+	hub.clients[client] = true
+	handleSocketPayloadEvents(client, SocketEventStruct{
+		EventName:    "join",
+		EventPayload: client.username,
+	})
+}
+
+// HandleUserDisconnectEvent will handle the Disconnect event for socket users
+func HandleUserDisconnectEvent(hub *Hub, client *Client) {
+	_, ok := hub.clients[client]
+	if ok {
+		delete(hub.clients, client)
+		close(client.send)
+
+		handleSocketPayloadEvents(client, SocketEventStruct{
+			EventName:    "disconnect",
+			EventPayload: client.username,
+		})
+	}
+}
+
+// BroadcastSocketEventToAllClient will emit the socket events to all socket users
+func BroadcastSocketEventToAllClient(hub *Hub, payload SocketEventStruct) {
+	for client := range hub.clients {
+		select {
+		case client.send <- payload:
+		default:
+			close(client.send)
+			delete(hub.clients, client)
+		}
+	}
 }
 
 func handleSocketPayloadEvents(client *Client, socketEventPayload SocketEventStruct) {
@@ -129,47 +168,13 @@ func (c *Client) writePump() {
 	}
 }
 
-// CreateNewSocketUser creates a new socket user
-func CreateNewSocketUser(hub *Hub, connection *websocket.Conn, username string) {
-	client := &Client{hub: hub, webSocketConnection: connection, send: make(chan SocketEventStruct), username: username}
-
-	client.hub.register <- client
-
-	go client.writePump()
-	go client.readPump()
+func unRegisterAndCloseConnection(c *Client) {
+	c.hub.unregister <- c
+	c.webSocketConnection.Close()
 }
 
-// HandleUserRegisterEvent will handle the Join event for New socket users
-func HandleUserRegisterEvent(hub *Hub, client *Client) {
-	hub.clients[client] = true
-	handleSocketPayloadEvents(client, SocketEventStruct{
-		EventName:    "join",
-		EventPayload: client.username,
-	})
-}
-
-// HandleUserDisconnectEvent will handle the Disconnect event for socket users
-func HandleUserDisconnectEvent(hub *Hub, client *Client) {
-	_, ok := hub.clients[client]
-	if ok {
-		delete(hub.clients, client)
-		close(client.send)
-
-		handleSocketPayloadEvents(client, SocketEventStruct{
-			EventName:    "disconnect",
-			EventPayload: client.username,
-		})
-	}
-}
-
-// BroadcastSocketEventToAllClient will emit the socket events to all socket users
-func BroadcastSocketEventToAllClient(hub *Hub, payload SocketEventStruct) {
-	for client := range hub.clients {
-		select {
-		case client.send <- payload:
-		default:
-			close(client.send)
-			delete(hub.clients, client)
-		}
-	}
+func setSocketPayloadReadConfig(c *Client) {
+	c.webSocketConnection.SetReadLimit(maxMessageSize)
+	c.webSocketConnection.SetReadDeadline(time.Now().Add(pongWait))
+	c.webSocketConnection.SetPongHandler(func(string) error { c.webSocketConnection.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 }

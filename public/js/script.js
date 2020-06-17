@@ -1,3 +1,6 @@
+// Build a Realtime group chat app in Golang using WebSockets
+// @author Shashank Tiwari
+
 const domElement = document.querySelector(".chat__app-container");
 
 class App extends React.Component {
